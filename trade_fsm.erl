@@ -1,6 +1,14 @@
 -module(trade_fsm).
 -behaviour(gen_fsm).
 
+%%%%%%%%%%%%%%%%%%%%%%%
+% ZADANIE B (2)
+% Zmodyfikuj przykład „Trading System” w taki sposób, by negocjacje doty-
+% czyły ceny jednego produktu (gracze to producent i konsument, a kolejne
+% oferty mają polegać na zmniejszaniu ceny proponowanej przez producenta
+% i zwiększaniu tej proponowanej przez konsumenta).
+%%%%%%%%%%%%%%%%%%%%%%%
+
 %% public API
 -export([start/1, start_link/1, trade/2, accept_trade/1,
          make_offer/2, retract_offer/2, ready/1, cancel/1]).
