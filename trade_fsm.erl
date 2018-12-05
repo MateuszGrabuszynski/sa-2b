@@ -10,7 +10,7 @@
 %%%%%%%%%%%%%%%%%%%%%%%
 
 %% public API
--export([start/1, start_link/1, trade/2, accept_trade/1,
+-export([start/1, start_link/1, trade/2, accept_trade/1, make_bid/3,
          make_offer/3, retract_offer/2, ready/1, cancel/1]).
 %% gen_fsm callbacks
 -export([init/1, handle_event/3, handle_sync_event/4, handle_info/3,
@@ -33,6 +33,10 @@ trade(OwnPid, OtherPid) ->
 %% Accept someone's trade offer.
 accept_trade(OwnPid) ->
    gen_fsm:sync_send_event(OwnPid, accept_negotiate).
+
+%% Bid
+make_bid(OwnPid, Item, Price) ->
+  gen_fsm:send_event(OwnPid, {make_bid, Item, Price}).
 
 %% Send an item on the table to be traded
 make_offer(OwnPid, Item, Price) ->
@@ -58,6 +62,10 @@ cancel(OwnPid) ->
  %% Forward the client message accepting the transaction
  accept_negotiate(OtherPid, OwnPid) ->
      gen_fsm:send_event(OtherPid, {accept_negotiate, OwnPid}).
+
+% bids
+do_bid(OtherPid, Item, Price) ->
+  gen_fsm:send_event(OtherPid, {do_bid, Item, Price}).
 
 %% forward a client's offer
 do_offer(OtherPid, Item, Price) ->
@@ -98,7 +106,7 @@ notify_cancel(OtherPid) ->
 
 -record(state, {name="",
                other,
-               tradeditem,
+               tradeditem="",
                ourstate, % offerer/buyer
                ourprice,
                otherprice,
@@ -166,15 +174,44 @@ idle_wait(Event, _From, Data) ->
 % remove(Item, Items) ->
 %     Items -- [Item].
 
+negotiate({make_bid, Item, Price}, S=#state{}) ->
+  case S#state.tradeditem of
+    Item ->
+      do_bid(S#state.other, Item, Price),
+      notice(S, "bidding $~p on ~p", [Price, Item]),
+      {next_state, negotiate, S#state{ourprice=Price}};
+    _ ->
+      io:format("Item ~p is not connected with any offer.~n", [Item]),
+      {next_state, negotiate, S#state{}}
+  end;
+
 negotiate({make_offer, Item, Price}, S=#state{}) ->
-    do_offer(S#state.other, Item, Price),
-    notice(S, "offering ~p for $~p", [Item, Price]),
-    {next_state, negotiate, S#state{tradeditem=Item, ourprice=Price}};
+  io:format("~p/~p/~p/~p~n", [Item, Price, S#state.tradeditem, S#state.ourprice]),
+  case S#state.tradeditem of
+    [] ->
+      do_offer(S#state.other, Item, Price),
+      notice(S, "offering ~p for $~p", [Item, Price]),
+      {next_state, negotiate, S#state{tradeditem=Item, ourprice=Price}};
+    _ ->
+      io:format("Item ~p is not connected with any offer.~n", [Item]),
+      {next_state, negotiate, S#state{}}
+  end;
+
 %% Own side retracting an item offer
 negotiate({retract_offer, Item}, S=#state{}) ->
     undo_offer(S#state.other, Item),
     notice(S, "cancelling offer on ~p", [Item]),
-    {next_state, negotiate, S#state{tradeditem=none, ourprice=none, otherprice=none}};
+    {next_state, negotiate, S#state{tradeditem="", ourprice=undefined, otherprice=undefined}};
+% other side bidding
+negotiate({do_bid, Item, Price}, S=#state{}) ->
+  if
+    S#state.tradeditem == Item ->
+      notice(S, "other player bidding ~p for $~p", [Price, Item]),
+      {next_state, negotiate, S#state{otherprice=Price}};
+    true ->
+      io:format("Item ~p bidded by other player is not now on the table.~n", [Item]),
+      {next_state, negotiate, S#state{}}
+  end;
 %% other side offering an item
 negotiate({do_offer, Item, Price}, S=#state{}) ->
     notice(S, "other player offering ~p for $~p", [Item, Price]),
@@ -182,7 +219,7 @@ negotiate({do_offer, Item, Price}, S=#state{}) ->
 %% other side retracting an item offer
 negotiate({undo_offer, Item}, S=#state{}) ->
     notice(S, "Other player cancelling offer on ~p", [Item]),
-    {next_state, negotiate, S#state{tradeditem=none, ourprice=none, otherprice=none}};
+    {next_state, negotiate, S#state{tradeditem="", ourprice=undefined, otherprice=undefined}};
 
 negotiate(are_you_ready, S=#state{other=OtherPid}) ->
     io:format("Other user ready to trade ~p for $~p.~n", [S#state.tradeditem, S#state.ourprice]),
@@ -203,7 +240,17 @@ negotiate(ready, From, S = #state{other=OtherPid}) ->
 negotiate(Event, _From, S) ->
     unexpected(Event, negotiate),
     {next_state, negotiate, S}.
-
+% other side bidding
+wait({do_bid, Item, Price}, S=#state{}) ->
+  if
+    S#state.tradeditem == Item ->
+      gen_fsm:reply(S#state.from, bid_changed),
+      notice(S, "other player bidding ~p for $~p", [Price, Item]),
+      {next_state, negotiate, S#state{otherprice=Price}};
+    true ->
+      io:format("Item ~p bidded by other player is not now on the table.~n", [Item]),
+      {next_state, negotiate, S#state{}}
+  end;
 wait({do_offer, Item, Price}, S=#state{}) ->
     gen_fsm:reply(S#state.from, offer_changed),
     notice(S, "other side offering ~p for $~p", [Item, Price]),
@@ -211,7 +258,7 @@ wait({do_offer, Item, Price}, S=#state{}) ->
 wait({undo_offer, Item}, S=#state{}) ->
     gen_fsm:reply(S#state.from, offer_changed),
     notice(S, "Other side cancelling offer of ~p", [Item]),
-    {next_state, negotiate, S#state{tradeditem=none, ourprice=none, otherprice=none}};
+    {next_state, negotiate, S#state{tradeditem="", ourprice=undefined, otherprice=undefined}};
 
 wait(are_you_ready, S=#state{}) ->
     am_ready(S#state.other),
