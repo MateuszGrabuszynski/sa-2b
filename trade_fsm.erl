@@ -11,7 +11,7 @@
 
 %% public API
 -export([start/1, start_link/1, trade/2, accept_trade/1,
-         make_offer/2, retract_offer/2, ready/1, cancel/1]).
+         make_offer/3, retract_offer/2, ready/1, cancel/1]).
 %% gen_fsm callbacks
 -export([init/1, handle_event/3, handle_sync_event/4, handle_info/3,
          terminate/3, code_change/4,
@@ -35,8 +35,8 @@ accept_trade(OwnPid) ->
    gen_fsm:sync_send_event(OwnPid, accept_negotiate).
 
 %% Send an item on the table to be traded
-make_offer(OwnPid, Item) ->
-   gen_fsm:send_event(OwnPid, {make_offer, Item}).
+make_offer(OwnPid, Item, Price) ->
+   gen_fsm:send_event(OwnPid, {make_offer, Item, Price}).
 
 %% Cancel trade offer
 retract_offer(OwnPid, Item) ->
@@ -60,8 +60,8 @@ cancel(OwnPid) ->
      gen_fsm:send_event(OtherPid, {accept_negotiate, OwnPid}).
 
 %% forward a client's offer
-do_offer(OtherPid, Item) ->
-   gen_fsm:send_event(OtherPid, {do_offer, Item}).
+do_offer(OtherPid, Item, Price) ->
+   gen_fsm:send_event(OtherPid, {do_offer, Item, Price}).
 
 %% forward a client's offer cancellation
 undo_offer(OtherPid, Item) ->
@@ -98,8 +98,10 @@ notify_cancel(OtherPid) ->
 
 -record(state, {name="",
                other,
-               ownitems=[],
-               otheritems=[],
+               tradeditem,
+               ourstate, % offerer/buyer
+               ourprice,
+               otherprice,
                monitor,
                from}).
 
@@ -119,7 +121,7 @@ unexpected(Msg, State) ->
 idle({ask_negotiate, OtherPid}, S=#state{}) ->
     Ref = monitor(process, OtherPid),
     notice(S, "~p asked for a trade negotiation", [OtherPid]),
-    {next_state, idle_wait, S#state{other=OtherPid, monitor=Ref}};
+    {next_state, idle_wait, S#state{other=OtherPid, monitor=Ref, ourstate=buyer}};
 idle(Event, Data) ->
     unexpected(Event, idle),
     {next_state, idle, Data}.
@@ -128,10 +130,12 @@ idle({negotiate, OtherPid}, From, S=#state{}) ->
     ask_negotiate(OtherPid, self()),
     notice(S, "asking user ~p for a trade", [OtherPid]),
     Ref = monitor(process, OtherPid),
-    {next_state, idle_wait, S#state{other=OtherPid, monitor=Ref, from=From}};
+    {next_state, idle_wait, S#state{other=OtherPid, monitor=Ref, from=From, ourstate=offerer}};
 idle(Event, _From, Data) ->
     unexpected(Event, idle),
     {next_state, idle, Data}.
+
+%%% seeeeeemzZzz ALLRIGHT till now xD
 
 idle_wait({ask_negotiate, OtherPid}, S=#state{other=OtherPid}) ->
     gen_fsm:reply(S#state.from, ok),
@@ -149,43 +153,43 @@ idle_wait(Event, Data) ->
 idle_wait(accept_negotiate, _From, S=#state{other=OtherPid}) ->
     accept_negotiate(OtherPid, self()),
     notice(S, "accepting negotiation", []),
-    {reply, ok, negotiate, S};
+    {reply, ok, negotiate, S#state{ourstate=buyer}};
 idle_wait(Event, _From, Data) ->
     unexpected(Event, idle_wait),
     {next_state, idle_wait, Data}.
 
-%% adds an item to an item list
-add(Item, Items) ->
-    [Item | Items].
+% %% adds an item to an item list
+% add(Item, Items) ->
+%     [Item | Items].
+%
+% %% remove an item from an item list
+% remove(Item, Items) ->
+%     Items -- [Item].
 
-%% remove an item from an item list
-remove(Item, Items) ->
-    Items -- [Item].
-
-negotiate({make_offer, Item}, S=#state{ownitems=OwnItems}) ->
-    do_offer(S#state.other, Item),
-    notice(S, "offering ~p", [Item]),
-    {next_state, negotiate, S#state{ownitems=add(Item, OwnItems)}};
+negotiate({make_offer, Item, Price}, S=#state{}) ->
+    do_offer(S#state.other, Item, Price),
+    notice(S, "offering ~p for $~p", [Item, Price]),
+    {next_state, negotiate, S#state{tradeditem=Item, ourprice=Price}};
 %% Own side retracting an item offer
-negotiate({retract_offer, Item}, S=#state{ownitems=OwnItems}) ->
+negotiate({retract_offer, Item}, S=#state{}) ->
     undo_offer(S#state.other, Item),
     notice(S, "cancelling offer on ~p", [Item]),
-    {next_state, negotiate, S#state{ownitems=remove(Item, OwnItems)}};
+    {next_state, negotiate, S#state{tradeditem=none, ourprice=none, otherprice=none}};
 %% other side offering an item
-negotiate({do_offer, Item}, S=#state{otheritems=OtherItems}) ->
-    notice(S, "other player offering ~p", [Item]),
-    {next_state, negotiate, S#state{otheritems=add(Item, OtherItems)}};
+negotiate({do_offer, Item, Price}, S=#state{}) ->
+    notice(S, "other player offering ~p for $~p", [Item, Price]),
+    {next_state, negotiate, S#state{tradeditem=Item, otherprice=Price}};
 %% other side retracting an item offer
-negotiate({undo_offer, Item}, S=#state{otheritems=OtherItems}) ->
+negotiate({undo_offer, Item}, S=#state{}) ->
     notice(S, "Other player cancelling offer on ~p", [Item]),
-    {next_state, negotiate, S#state{otheritems=remove(Item, OtherItems)}};
+    {next_state, negotiate, S#state{tradeditem=none, ourprice=none, otherprice=none}};
 
 negotiate(are_you_ready, S=#state{other=OtherPid}) ->
-    io:format("Other user ready to trade.~n"),
+    io:format("Other user ready to trade ~p for $~p.~n", [S#state.tradeditem, S#state.ourprice]),
     notice(S,
            "Other user ready to transfer goods:~n"
-           "You get ~p, The other side gets ~p",
-           [S#state.otheritems, S#state.ownitems]),
+           "You get ~p for $~p",
+           [S#state.tradeditem, S#state.ourprice]),
     not_yet(OtherPid),
     {next_state, negotiate, S};
 negotiate(Event, Data) ->
@@ -200,14 +204,14 @@ negotiate(Event, _From, S) ->
     unexpected(Event, negotiate),
     {next_state, negotiate, S}.
 
-wait({do_offer, Item}, S=#state{otheritems=OtherItems}) ->
+wait({do_offer, Item, Price}, S=#state{}) ->
     gen_fsm:reply(S#state.from, offer_changed),
-    notice(S, "other side offering ~p", [Item]),
-    {next_state, negotiate, S#state{otheritems=add(Item, OtherItems)}};
-wait({undo_offer, Item}, S=#state{otheritems=OtherItems}) ->
+    notice(S, "other side offering ~p for $~p", [Item, Price]),
+    {next_state, negotiate, S#state{tradeditem=Item, otherprice=Price}};
+wait({undo_offer, Item}, S=#state{}) ->
     gen_fsm:reply(S#state.from, offer_changed),
     notice(S, "Other side cancelling offer of ~p", [Item]),
-    {next_state, negotiate, S#state{otheritems=remove(Item, OtherItems)}};
+    {next_state, negotiate, S#state{tradeditem=none, ourprice=none, otherprice=none}};
 
 wait(are_you_ready, S=#state{}) ->
     am_ready(S#state.other),
@@ -269,10 +273,10 @@ ready(Event, _From, Data) ->
 
 commit(S = #state{}) ->
     io:format("Transaction completed for ~s. "
-              "Items sent are:~n~p,~n received are:~n~p.~n"
+              "Item ~p, was sold for $~p.~n"
               "This operation should have some atomic save "
               "in a database.~n",
-              [S#state.name, S#state.ownitems, S#state.otheritems]).
+              [S#state.name, S#state.tradeditem, S#state.ourprice]).
 
 %% The other player has sent this cancel event
 %% stop whatever we're doing and shut down!
