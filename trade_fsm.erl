@@ -175,18 +175,17 @@ idle_wait(Event, _From, Data) ->
 %     Items -- [Item].
 
 negotiate({make_bid, Item, Price}, S=#state{}) ->
-  case S#state.tradeditem of
-    Item ->
+  if
+    ((S#state.tradeditem == Item) and (S#state.ourstate == offerer) and (S#state.ourprice >= Price) and (S#state.otherprice =< Price)) ->
       do_bid(S#state.other, Item, Price),
       notice(S, "bidding $~p on ~p", [Price, Item]),
       {next_state, negotiate, S#state{ourprice=Price}};
-    _ ->
+    true ->
       io:format("Item ~p is not connected with any offer.~n", [Item]),
       {next_state, negotiate, S#state{}}
   end;
 
 negotiate({make_offer, Item, Price}, S=#state{}) ->
-  io:format("~p/~p/~p/~p~n", [Item, Price, S#state.tradeditem, S#state.ourprice]),
   case S#state.tradeditem of
     [] ->
       do_offer(S#state.other, Item, Price),
@@ -205,8 +204,8 @@ negotiate({retract_offer, Item}, S=#state{}) ->
 % other side bidding
 negotiate({do_bid, Item, Price}, S=#state{}) ->
   if
-    S#state.tradeditem == Item ->
-      notice(S, "other player bidding ~p for $~p", [Price, Item]),
+    ((S#state.tradeditem == Item) and (S#state.ourstate == buyer) and (S#state.ourprice =< Price) and (S#state.otherprice >= Price)) ->
+      notice(S, "other player bidding ~p for $~p", [Item, Price]),
       {next_state, negotiate, S#state{otherprice=Price}};
     true ->
       io:format("Item ~p bidded by other player is not now on the table.~n", [Item]),
@@ -222,13 +221,20 @@ negotiate({undo_offer, Item}, S=#state{}) ->
     {next_state, negotiate, S#state{tradeditem="", ourprice=undefined, otherprice=undefined}};
 
 negotiate(are_you_ready, S=#state{other=OtherPid}) ->
-    io:format("Other user ready to trade ~p for $~p.~n", [S#state.tradeditem, S#state.ourprice]),
-    notice(S,
-           "Other user ready to transfer goods:~n"
-           "You get ~p for $~p",
-           [S#state.tradeditem, S#state.ourprice]),
-    not_yet(OtherPid),
-    {next_state, negotiate, S};
+  if
+    S#state.tradeditem /= [] ->
+      io:format("Other user ready to trade ~p for $~p.~n", [S#state.tradeditem, S#state.ourprice]),
+      notice(S,
+             "Other user ready to transfer goods:~n"
+             "You get ~p for $~p",
+             [S#state.tradeditem, S#state.ourprice]),
+      not_yet(OtherPid),
+      {next_state, negotiate, S};
+    true ->
+      io:format("No item to trade.~n"),
+      {next_state, negotiate, S}
+  end;
+
 negotiate(Event, Data) ->
     unexpected(Event, negotiate),
     {next_state, negotiate, Data}.
@@ -240,10 +246,11 @@ negotiate(ready, From, S = #state{other=OtherPid}) ->
 negotiate(Event, _From, S) ->
     unexpected(Event, negotiate),
     {next_state, negotiate, S}.
+
 % other side bidding
 wait({do_bid, Item, Price}, S=#state{}) ->
   if
-    S#state.tradeditem == Item ->
+    ((S#state.tradeditem == Item) and (S#state.ourstate == buyer) and (S#state.ourprice =< Price) and (S#state.otherprice >= Price)) ->
       gen_fsm:reply(S#state.from, bid_changed),
       notice(S, "other player bidding ~p for $~p", [Price, Item]),
       {next_state, negotiate, S#state{otherprice=Price}};
