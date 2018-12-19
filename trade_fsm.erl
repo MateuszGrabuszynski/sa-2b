@@ -175,7 +175,7 @@ idle_wait(Event, _From, Data) ->
 %     Items -- [Item].
 
 negotiate({make_bid, Item, Price}, S=#state{}) ->
-  io:format("ti ~p / Item ~p / ourp ~p / othp ~p / Price ~p~n", [S#state.tradeditem, Item, S#state.ourprice, S#state.otherprice, Price]),
+  %io:format("ti ~p / Item ~p / ourp ~p / othp ~p / Price ~p~n", [S#state.tradeditem, Item, S#state.ourprice, S#state.otherprice, Price]),
   if
     (S#state.tradeditem == Item) -> % and (S#state.ourprice >= Price) and (S#state.otherprice =< Price)) ->
       do_bid(S#state.other, Item, Price),
@@ -328,10 +328,10 @@ ready(Event, _From, Data) ->
 
 commit(S = #state{}) ->
     io:format("Transaction completed for ~s. "
-              "Item ~p, was sold for $~p.~n"
+              "Item ~p, was sold"
               "This operation should have some atomic save "
               "in a database.~n",
-              [S#state.name, S#state.tradeditem, S#state.ourprice]).
+              [S#state.name, S#state.tradeditem]).
 
 %% The other player has sent this cancel event
 %% stop whatever we're doing and shut down!
