@@ -36,7 +36,7 @@ b(PidA, PidCliA) ->
     timer:sleep(500),
     trade_fsm:trade(Pid, PidA),
     trade_fsm:make_offer(Pid, "boots"),
-    timer:sleep(200),
+    timer:sleep(500),
     trade_fsm:retract_offer(Pid, "boots"),
     timer:sleep(500),
     trade_fsm:make_offer(Pid, "shotgun"),
@@ -56,7 +56,7 @@ main_cd() ->
     spawn(fun() -> d(S, PidC, PidCliC) end),
     receive PidD -> PidD end,
     PidCliC ! PidD.
-    
+
 c(Parent) ->
     {ok, Pid} = trade_fsm:start_link("Marc"),
     Parent ! Pid,

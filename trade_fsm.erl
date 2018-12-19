@@ -175,13 +175,14 @@ idle_wait(Event, _From, Data) ->
 %     Items -- [Item].
 
 negotiate({make_bid, Item, Price}, S=#state{}) ->
+  io:format("ti ~p / Item ~p / ourp ~p / othp ~p / Price ~p~n", [S#state.tradeditem, Item, S#state.ourprice, S#state.otherprice, Price]),
   if
-    ((S#state.tradeditem == Item) and (S#state.ourstate == offerer) and (S#state.ourprice >= Price) and (S#state.otherprice =< Price)) ->
+    (S#state.tradeditem == Item) -> % and (S#state.ourprice >= Price) and (S#state.otherprice =< Price)) ->
       do_bid(S#state.other, Item, Price),
       notice(S, "bidding $~p on ~p", [Price, Item]),
       {next_state, negotiate, S#state{ourprice=Price}};
     true ->
-      io:format("Item ~p is not connected with any offer.~n", [Item]),
+      io:format("~p: Cannot bid. Item ~p is not connected with any offer.~n", [S#state.name, Item]),
       {next_state, negotiate, S#state{}}
   end;
 
@@ -204,7 +205,7 @@ negotiate({retract_offer, Item}, S=#state{}) ->
 % other side bidding
 negotiate({do_bid, Item, Price}, S=#state{}) ->
   if
-    ((S#state.tradeditem == Item) and (S#state.ourstate == buyer) and (S#state.ourprice =< Price) and (S#state.otherprice >= Price)) ->
+    (S#state.tradeditem == Item) -> % and (S#state.ourprice =< Price) and (S#state.otherprice >= Price)) ->
       notice(S, "other player bidding ~p for $~p", [Item, Price]),
       {next_state, negotiate, S#state{otherprice=Price}};
     true ->
