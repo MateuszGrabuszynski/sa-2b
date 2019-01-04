@@ -2,6 +2,7 @@
 -behaviour(gen_fsm).
 
 %%%%%%%%%%%%%%%%%%%%%%%
+% Autor: dr inż. Grażyna Brzykcy
 % ZADANIE B (2)
 % Zmodyfikuj przykład „Trading System” w taki sposób, by negocjacje doty-
 % czyły ceny jednego produktu (gracze to producent i konsument, a kolejne
@@ -143,8 +144,6 @@ idle(Event, _From, Data) ->
     unexpected(Event, idle),
     {next_state, idle, Data}.
 
-%%% seeeeeemzZzz ALLRIGHT till now xD
-
 idle_wait({ask_negotiate, OtherPid}, S=#state{other=OtherPid}) ->
     gen_fsm:reply(S#state.from, ok),
     notice(S, "starting negotiation", []),
@@ -166,18 +165,9 @@ idle_wait(Event, _From, Data) ->
     unexpected(Event, idle_wait),
     {next_state, idle_wait, Data}.
 
-% %% adds an item to an item list
-% add(Item, Items) ->
-%     [Item | Items].
-%
-% %% remove an item from an item list
-% remove(Item, Items) ->
-%     Items -- [Item].
-
 negotiate({make_bid, Item, Price}, S=#state{}) ->
-  %io:format("ti ~p / Item ~p / ourp ~p / othp ~p / Price ~p~n", [S#state.tradeditem, Item, S#state.ourprice, S#state.otherprice, Price]),
   if
-    (S#state.tradeditem == Item) -> % and (S#state.ourprice >= Price) and (S#state.otherprice =< Price)) ->
+    (S#state.tradeditem == Item) ->
       do_bid(S#state.other, Item, Price),
       notice(S, "bidding $~p on ~p", [Price, Item]),
       {next_state, negotiate, S#state{ourprice=Price}};
@@ -205,7 +195,7 @@ negotiate({retract_offer, Item}, S=#state{}) ->
 % other side bidding
 negotiate({do_bid, Item, Price}, S=#state{}) ->
   if
-    (S#state.tradeditem == Item) -> % and (S#state.ourprice =< Price) and (S#state.otherprice >= Price)) ->
+    (S#state.tradeditem == Item) ->
       notice(S, "other player bidding ~p for $~p", [Item, Price]),
       {next_state, negotiate, S#state{otherprice=Price}};
     true ->
@@ -283,7 +273,7 @@ wait('ready!', S=#state{}) ->
     gen_fsm:reply(S#state.from, ok),
     notice(S, "other side is ready. Moving to ready state", []),
     {next_state, ready, S};
-%% DOn't care about these!
+
 wait(Event, Data) ->
     unexpected(Event, wait),
     {next_state, wait, Data}.
