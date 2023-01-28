@@ -1,3 +1,5 @@
+> **Note:** By no means is this code secure or validated. Treat as unchecked copy archived due to no changes planned.
+
 # Trading FSM
 Following code is based on the work of Frederic Trottier-Hebert, author of _Learn You Some Erlang for great good!_. The original MIT license is available in `LICENSE-original.txt`. Finite-State Machines are described there: https://learnyousomeerlang.com/finite-state-machines. More about trading machine is in _A Trading System Specification_ section (#a-trading-system-specification).
 
